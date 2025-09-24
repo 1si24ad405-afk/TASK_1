@@ -1,0 +1,92 @@
+import pandas as pd
+import numpy as np
+
+
+data = {
+    "CustomerID": [1, 2, 2, 3, 4, 5, None],
+    "Name": ["Alice", "Bob", "bob", "Charlie", "David", "Eve", "Frank"],
+    "Age": [25, None, None, 35, 40, 29, 33],
+    "Gender": ["M", "male", "F", "Female", "f", None, "Male"],
+    "Country": ["india", "India ", "USA", "usa", "Uk", None, "uk"],
+    "JoinDate": ["12/01/2022", "2022-01-15", "15-01-2022", None,
+                 "2022/02/01", "2022-03-10", "10-03-2022"],
+    "Satisfaction": ["High", None, "low", "Low ", "medium", "High", "MEDIUM"]
+}
+df = pd.DataFrame(data)
+
+
+df = df.copy()
+df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")  # e.g. "CustomerID" -> "customerid"
+
+
+for col in df.columns:
+    if pd.api.types.is_object_dtype(df[col]) or pd.api.types.is_string_dtype(df[col]):
+        # Use mode if available, else fallback to "Unknown"
+        modes = df[col].mode(dropna=True)
+        if not modes.empty:
+            df[col] = df[col].fillna(modes.iloc[0])
+        else:
+            df[col] = df[col].fillna("Unknown")
+    elif pd.api.types.is_numeric_dtype(df[col]):
+        # numeric: fill with median if any missing
+        if df[col].isna().any():
+            df[col] = df[col].fillna(df[col].median())
+
+
+df = df.drop_duplicates()
+
+if "gender" in df.columns:
+    # unify casing and whitespace, treat literal "None"/"nan" strings as NaN
+    df["gender"] = df["gender"].astype(str).str.strip().replace({"nan": np.nan, "None": np.nan})
+    # mapping using lowercase keys
+    gender_map = {"m": "Male", "male": "Male", "f": "Female", "female": "Female"}
+    df["gender"] = df["gender"].str.lower().map(gender_map).fillna(df["gender"])
+
+if "country" in df.columns:
+    df["country"] = df["country"].astype(str).str.strip()
+    country_map = {"usa": "United States", "us": "United States", "uk": "United Kingdom", "india": "India"}
+    # map using lowercase mapping keys; if not mapped, title-case the value
+    df["country"] = df["country"].str.lower().map(country_map).fillna(df["country"].str.title())
+
+if "satisfaction" in df.columns:
+    df["satisfaction"] = df["satisfaction"].astype(str).str.strip().str.lower()
+    sat_map = {"high": "High", "medium": "Medium", "low": "Low"}
+    df["satisfaction"] = df["satisfaction"].map(sat_map).fillna(df["satisfaction"].str.title())
+
+
+if "joindate" in df.columns:
+    df["joindate"] = pd.to_datetime(df["joindate"], errors="coerce", dayfirst=True)
+    if df["joindate"].notna().any():
+        median_dt = df["joindate"].median()
+        df["joindate"] = df["joindate"].fillna(median_dt)
+
+
+if "age" in df.columns:
+    if df["age"].isna().any():
+        # safe median fill then cast
+        df["age"] = df["age"].fillna(int(df["age"].median()))
+    df["age"] = df["age"].astype(int)
+
+
+if "customerid" in df.columns:
+    # coerce non-numeric to NaN (keeps existing numeric)
+    df["customerid"] = pd.to_numeric(df["customerid"], errors="coerce")
+
+    missing_idx = df.index[df["customerid"].isna()]
+    if len(missing_idx) > 0:
+        if df["customerid"].notna().any():
+            start = int(df["customerid"].dropna().astype(int).max()) + 1
+        else:
+            start = 1
+        seq = pd.Series(range(start, start + len(missing_idx)), index=missing_idx)
+        df.loc[missing_idx, "customerid"] = seq
+
+   
+    df["customerid"] = df["customerid"].astype(int)
+
+
+# df = df[["customerid", "name", "age", "gender", "country", "joindate", "satisfaction"]]
+
+
+df.to_csv("cleaned_dataset.csv", index=False)
+print(df)
